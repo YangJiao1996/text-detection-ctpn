@@ -1,5 +1,37 @@
 import numpy as np
 
+def offset_intergration(offsets_left, offsets_right):
+    """
+    Integrating two offset arrays in a specific manner.
+    A stupid for-loop is used(may cause low performance).
+    Parameters
+    ------------
+    offsets_left, offsets_right: n * 1 numpy arrays
+    ------------
+    Return
+    ------------
+    offsets: n * 1 arrays, integrated offsets
+    """
+    offsets = np.array([])
+
+    for ind, offset_left in np.ndenumerate(offsets_left):
+        if offset_left == 0 and offsets_right[ind] == 0:
+            offsets = np.append(offsets, [0])
+        elif offset_left * offsets_right[ind] == 0:
+            if abs(offset_left) < abs(offsets_right[ind]):
+                offsets = np.append(offsets, offset_left)
+            else:
+                offsets = np.append(offsets, offsets_right[ind])
+        else:
+            if offset_left == 0:
+                offsets = np.append(offsets, offsets_right[ind])
+            else:
+                offsets = np.append(offsets, offset_left)
+
+    return offsets
+
+
+
 def bbox_transform(ex_rois, gt_rois):
     """
     computes the distance from ground-truth boxes to the given boxes, normed by their size
@@ -7,6 +39,9 @@ def bbox_transform(ex_rois, gt_rois):
     :param gt_rois: n * 4 numpy array, ground-truth boxes
     :return: deltas: n * 4 numpy array, ground-truth boxes
     """
+
+    DEBUG = False
+
     ex_widths = ex_rois[:, 2] - ex_rois[:, 0] + 1.0
     ex_heights = ex_rois[:, 3] - ex_rois[:, 1] + 1.0
     ex_ctr_x = ex_rois[:, 0] + 0.5 * ex_widths
@@ -20,6 +55,21 @@ def bbox_transform(ex_rois, gt_rois):
     gt_heights = gt_rois[:, 3] - gt_rois[:, 1] + 1.0
     gt_ctr_x = gt_rois[:, 0] + 0.5 * gt_widths
     gt_ctr_y = gt_rois[:, 1] + 0.5 * gt_heights
+    gt_left_sides = gt_rois[: ,0]
+    gt_right_sides = gt_rois[:, 2]
+
+    # Finding the side-anchors
+    horizon_left_dists = gt_left_sides - ex_ctr_x
+    horizon_right_dists = gt_right_sides - ex_ctr_x
+    side_left = np.where(abs(horizon_left_dists) <= 32)
+    side_right = np.where(abs(horizon_right_dists) <= 32)
+
+    # Calculating offsets
+    offsets_left = np.zeros((len(gt_ctr_x)))
+    offsets_left[side_left] = horizon_left_dists[side_left]
+    offsets_right = np.zeros((len(gt_ctr_x)))
+    offsets_right[side_right] = horizon_right_dists[side_right]
+    offsets = offset_intergration(offsets_left, offsets_right) / ex_widths
 
     # warnings.catch_warnings()
     # warnings.filterwarnings('error')
@@ -27,6 +77,24 @@ def bbox_transform(ex_rois, gt_rois):
     targets_dy = (gt_ctr_y - ex_ctr_y) / ex_heights
     targets_dw = np.log(gt_widths / ex_widths)
     targets_dh = np.log(gt_heights / ex_heights)
+
+    if DEBUG:
+        print("gt_ctr_x.shape: ", gt_ctr_x.shape)
+        print("ex_ctr_x.shape: ", ex_ctr_x.shape)
+        print("ex_widths: ")
+        print(ex_widths)
+        print("ex_widths.shape: ", ex_widths.shape)
+        print("targets_dx.shape: ", targets_dx.shape)
+        print("horizon_left_dists: ")
+        print(horizon_left_dists)
+        print("horizon_right_dists: ")
+        print(horizon_right_dists)
+        print("side_left: ")
+        print(side_left)
+        print("side_right: ")
+        print(side_right)
+        print("offsets: ")
+        print(np.where(abs(offsets != 0)))
 
     targets = np.vstack(
         (targets_dx, targets_dy, targets_dw, targets_dh)).transpose()
@@ -78,3 +146,4 @@ def clip_boxes(boxes, im_shape):
     # y2 < im_shape[0]
     boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
     return boxes
+

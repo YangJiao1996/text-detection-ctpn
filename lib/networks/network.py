@@ -29,6 +29,7 @@ def layer(op):
         return self
     return layer_decorated
 
+
 class Network(object):
     def __init__(self, inputs, trainable=True):
         self.inputs = []
@@ -55,7 +56,7 @@ class Network(object):
                             raise
 
     def feed(self, *args):
-        assert len(args)!=0
+        assert len(args) != 0
         self.inputs = []
         for layer in args:
             if isinstance(layer, str):
@@ -376,36 +377,60 @@ class Network(object):
 
 
     def build_loss(self, ohem=False):
+
+        LMD = 2
+
         # classification loss
         rpn_cls_score = tf.reshape(self.get_output('rpn_cls_score_reshape'), [-1, 2])  # shape (HxWxA, 2)
         rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])  # shape (HxWxA)
+
         # ignore_label(-1)
-        fg_keep = tf.equal(rpn_label, 1)
+        fg_keep = tf.equal(rpn_label, 1) 
         rpn_keep = tf.where(tf.not_equal(rpn_label, -1))
+
         rpn_cls_score = tf.gather(rpn_cls_score, rpn_keep) # shape (N, 2)
         rpn_label = tf.gather(rpn_label, rpn_keep)
         rpn_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=rpn_label,logits=rpn_cls_score)
 
         # box loss
         rpn_bbox_pred = self.get_output('rpn_bbox_pred') # shape (1, H, W, Ax4)
-        rpn_bbox_targets = self.get_output('rpn-data')[1]
+        rpn_bbox_targets = self.get_output('rpn-data')[1] # shape (1, H, W, AX4)
         rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
         rpn_bbox_outside_weights = self.get_output('rpn-data')[3]
+
+        # ignore_label(-1)
         rpn_bbox_pred = tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), rpn_keep) # shape (N, 4)
         rpn_bbox_targets = tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), rpn_keep)
         rpn_bbox_inside_weights = tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep)
         rpn_bbox_outside_weights = tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), rpn_keep)
 
-        rpn_loss_box_n = tf.reduce_sum(rpn_bbox_outside_weights * self.smooth_l1_dist(
-            rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), reduction_indices=[1])
+        # extract box regression and offset regression
+        rpn_bbox_pred_offset = rpn_bbox_pred[:, 0] # shape(N, 1)
+        rpn_bbox_pred_reg = tf.stack([rpn_bbox_pred[:, 1], rpn_bbox_pred[:, 3]], axis=1)
+        rpn_bbox_targets_offset = rpn_bbox_targets[:, 0]
+        rpn_bbox_targets_reg = tf.stack([rpn_bbox_targets[:, 1], rpn_bbox_targets[:, 3]], axis=1)
+        rpn_bbox_inside_weights_offset = rpn_bbox_inside_weights[:, 0]
+        rpn_bbox_inside_weights_reg = tf.stack([rpn_bbox_inside_weights[:, 1], rpn_bbox_inside_weights[:, 3]], axis=1)
+        rpn_bbox_outside_weights_offset = rpn_bbox_outside_weights[:, 0]
+        rpn_bbox_outside_weights_reg = tf.stack([rpn_bbox_outside_weights[:, 1], rpn_bbox_outside_weights[:, 3]], axis=1)
+
+        # building
+        rpn_loss_box_n = tf.reduce_sum(rpn_bbox_outside_weights_reg * self.smooth_l1_dist(
+            rpn_bbox_inside_weights_reg * (rpn_bbox_pred_reg - rpn_bbox_targets_reg)), reduction_indices=[1])
 
         rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1)
+
+        rpn_loss_offset_n = tf.reduce_sum(rpn_bbox_outside_weights_offset * self.smooth_l1_dist(
+            rpn_bbox_inside_weights_offset * (rpn_bbox_pred_offset - rpn_bbox_targets_offset)), reduction_indices=[1])
+
+        rpn_loss_offset = tf.reduce_sum(rpn_loss_offset_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1)
+
         rpn_cross_entropy = tf.reduce_mean(rpn_cross_entropy_n)
 
 
-        model_loss = rpn_cross_entropy +  rpn_loss_box
+        model_loss = rpn_cross_entropy +  rpn_loss_box + LMD * rpn_loss_offset
 
         regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
         total_loss = tf.add_n(regularization_losses) + model_loss
 
-        return total_loss,model_loss, rpn_cross_entropy, rpn_loss_box
+        return total_loss, model_loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_offset
