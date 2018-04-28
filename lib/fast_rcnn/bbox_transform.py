@@ -3,7 +3,7 @@ import numpy as np
 def offset_intergration(offsets_left, offsets_right):
     """
     Integrating two offset arrays in a specific manner.
-    A stupid for-loop is used(may cause low performance).
+
     Parameters
     ------------
     offsets_left, offsets_right: n * 1 numpy arrays
@@ -12,21 +12,25 @@ def offset_intergration(offsets_left, offsets_right):
     ------------
     offsets: n * 1 arrays, integrated offsets
     """
-    offsets = np.array([])
+    assert offsets_left.shape == offsets_right.shape, \
+            "The two offsets have different shapes: {}, {}". \
+            format.(offsets_left.shape, offsets_right.shape)
+    zero = np.zeros(offsets_left.shape)
+    offsets = np.zeros(offsets_right.shape)
 
-    for ind, offset_left in np.ndenumerate(offsets_left):
-        if offset_left == 0 and offsets_right[ind] == 0:
-            offsets = np.append(offsets, [0])
-        elif offset_left * offsets_right[ind] == 0:
-            if abs(offset_left) < abs(offsets_right[ind]):
-                offsets = np.append(offsets, offset_left)
-            else:
-                offsets = np.append(offsets, offsets_right[ind])
-        else:
-            if offset_left == 0:
-                offsets = np.append(offsets, offsets_right[ind])
-            else:
-                offsets = np.append(offsets, offset_left)
+    all_zero = np.logical_and((offsets_left == zero, offsets_right == zero))
+    index_bothzero = np.where(all_zero)
+    left_lesser = np.logical_and(np.logical_not(all_zero), (abs(offsets_left) < abs(offsets_right)))
+    right_lesser = np.logical_and(np.logical_not(all_zero), (abs(offsets_left) >= abs(offsets_right)))
+    left_zero = np.logical_and(np.logical_not(all_zero), offsets_left == zero)
+    right_zero = np.logical_and(np.logical_not(all_zero), offsets_right == zero)
+
+    offsets[index_bothzero] = 0
+    offsets[left_lesser] = offsets_left[left_lesser]
+    offsets[right_lesser] = offsets_right[right_lesser]
+    offsets[left_zero] = offsets_right[left_zero]
+    offsets[right_zero] = offsets_left[right_zero]
+
 
     return offsets
 
