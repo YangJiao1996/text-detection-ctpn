@@ -14,11 +14,11 @@ def offset_intergration(offsets_left, offsets_right):
     """
     assert offsets_left.shape == offsets_right.shape, \
             "The two offsets have different shapes: {}, {}". \
-            format.(offsets_left.shape, offsets_right.shape)
+            format(offsets_left.shape, offsets_right.shape)
     zero = np.zeros(offsets_left.shape)
     offsets = np.zeros(offsets_right.shape)
 
-    all_zero = np.logical_and((offsets_left == zero, offsets_right == zero))
+    all_zero = np.logical_and(offsets_left == zero, offsets_right == zero)
     index_bothzero = np.where(all_zero)
     left_lesser = np.logical_and(np.logical_not(all_zero), (abs(offsets_left) < abs(offsets_right)))
     right_lesser = np.logical_and(np.logical_not(all_zero), (abs(offsets_left) >= abs(offsets_right)))
